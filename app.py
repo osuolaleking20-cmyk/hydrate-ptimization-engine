@@ -85,17 +85,6 @@ scale = synced_input("Scale Inhibitor (wt%) [Lab: 0.0000 - 0.0045]", 0.0000, 0.0
 
 
 # ----------------------------------------------------------------------------
-# Sidebar Footer: Thermodynamic Discovery Limits
-# ----------------------------------------------------------------------------
-st.sidebar.divider()
-st.sidebar.markdown("### 🔬 Lab Thermodynamic Extremes")
-st.sidebar.info(
-    "**Max Plateau Pressures (from 150 psi):**\n\n"
-    "🟢 **141 psi:** Achieved using 30 wt% Methanol with **0%** CI & SI.\n\n"
-    "🔴 **106 psi:** Achieved using 30 wt% Methanol under **max** antagonism (0.10 wt% CI, 0.0045 wt% SI)."
-)
-
-# ----------------------------------------------------------------------------
 # Optimization
 # ----------------------------------------------------------------------------
 def build_frame(times, methanol):
@@ -140,6 +129,18 @@ if st.sidebar.button("Run Optimization", type="primary"):
         result["plateau_time"], result["final_t"] = plateau_metrics(sim_df)
     # Persist so results survive later widget interactions (Streamlit reruns the script)
     st.session_state["result"] = result
+
+# ----------------------------------------------------------------------------
+# Sidebar Footer: Thermodynamic Discovery Limits
+# ----------------------------------------------------------------------------
+st.sidebar.divider()
+st.sidebar.markdown("### 🔬 Lab Thermodynamic Extremes")
+st.sidebar.info(
+    "**Max Plateau Pressures (from 150 psi):**\n\n"
+    "🟢 **141 psi:** Achieved using 30 wt% Methanol with **0%** CI & SI.\n\n"
+    "🔴 **106 psi:** Achieved using 30 wt% Methanol under **max** antagonism (0.10 wt% CI, 0.0045 wt% SI)."
+)
+
 
 # ----------------------------------------------------------------------------
 # Display
