@@ -19,8 +19,8 @@ TIME_GRID = np.arange(0, FINAL_TIME_MIN + 2, 2)
 PLATEAU_TOL_PSI = 1.0
 
 st.set_page_config(page_title="Thermodynamic Optimization Engine", layout="wide")
-st.title("⚙️ Thermodynamic Optimization Engine")
-st.markdown("Predictive minimum methanol dosage for steady-state flow assurance.")
+st.title("Thermodynamic Optimization Engine")
+st.markdown("Predictive optimum methanol dosage for steady-state flow assurance in the presence of CI and SI.")
 
 
 @st.cache_resource
@@ -140,7 +140,7 @@ if result:
     inp = result["inputs"]
 
     with col_in:
-        st.subheader("📥 Input Parameters")
+        st.subheader("Input Parameters")
         st.info(
             f"**Target Plateau Pressure:** {inp['target_p']} psi\n\n"
             f"**Initial Pressure:** {inp['init_p']} psi\n\n"
@@ -152,7 +152,7 @@ if result:
             st.caption("⚠️ Sidebar values changed since this run — click **Run Optimization** to update.")
 
     with col_out:
-        st.subheader("📤 Optimization Output")
+        st.subheader("Optimization Output")
         if result["best_methanol"] is None:
             st.error(
                 f"❌ Target pressure cannot be achieved with up to {METHANOL_GRID[-1]:.0f} wt% "
@@ -160,7 +160,7 @@ if result:
             )
         else:
             st.success(
-                f"✅ **Optimal Methanol Dosage:** {result['best_methanol']:.1f} wt%\n\n"
+                f" **Optimal Methanol Dosage:** {result['best_methanol']:.1f} wt%\n\n"
                 f"⏱️ **Time to Plateau:** {result['plateau_time']} minutes\n\n"
                 f"🌡️ **Final Temperature:** {result['final_t']:.1f} °C"
             )
