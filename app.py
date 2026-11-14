@@ -8,7 +8,7 @@ import streamlit as st
 # ----------------------------------------------------------------------------
 # Constants
 # ----------------------------------------------------------------------------
-MODEL_PATH = Path(__file__).parent / "thermodynamic_engine.pkl"
+MODEL_PATH = Path(__file__).parent / "thermodynamic_engine_svr.pkl"
 FEATURES = [
     "time_min", "Methanol_wt", "Corrosion_wt",
     "Scale_wt", "Initial_Pressure_psi", "Initial_Temperature_C",
