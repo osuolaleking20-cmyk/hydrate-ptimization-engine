@@ -134,13 +134,15 @@ if st.sidebar.button("Run Optimization", type="primary"):
 # Sidebar Footer: Thermodynamic Discovery Limits
 # ----------------------------------------------------------------------------
 st.sidebar.divider()
-st.sidebar.markdown("### 🔬 Lab Thermodynamic Extremes")
+st.sidebar.markdown("### Lab Thermodynamic Extremes")
 st.sidebar.info(
-    "**Max Plateau Pressures (from 150 psi):**\n\n"
-    "🟢 **141 psi:** Achieved using 30 wt% Methanol with **0%** CI & SI.\n\n"
-    "🔴 **106 psi:** Achieved using 30 wt% Methanol under **max** antagonism (0.10 wt% CI, 0.0045 wt% SI)."
+    "**Maximum Achievable Plateau Pressures:**\n"
+    "*(From a 150 psi initial pressure)*\n\n"
+    "**141 psi (Uninhibited)**\n"
+    "Achieved using 30 wt% Methanol with 0% CI and 0% SI.\n\n"
+    "**106 psi (Max Antagonism)**\n"
+    "Achieved using 30 wt% Methanol with maximum inhibitors (0.10 wt% CI, 0.0045 wt% SI)."
 )
-
 
 # ----------------------------------------------------------------------------
 # Display
