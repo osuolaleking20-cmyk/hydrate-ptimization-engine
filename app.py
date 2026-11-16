@@ -8,19 +8,45 @@ import streamlit as st
 # ----------------------------------------------------------------------------
 # Constants
 # ----------------------------------------------------------------------------
-MODEL_PATH = Path(__file__).parent / "thermodynamic_engine_svr.pkl"
+MODEL_PATH = Path(__file__).parent / "thermodynamic_engine.pkl"
 FEATURES = [
     "time_min", "Methanol_wt", "Corrosion_wt",
     "Scale_wt", "Initial_Pressure_psi", "Initial_Temperature_C",
 ]
-FINAL_TIME_MIN = 120          # end of the laboratory test window
-METHANOL_GRID = np.arange(0.0, 30.5, 0.5)   # 0.0 -> 30.0 wt% in 0.5 steps
+
+# Lab conditions the model was trained on. These never varied in the experiments,
+# so they are fixed here rather than offered as inputs.
+LAB_INIT_P = 150.0   # psi
+LAB_INIT_T = 30.0    # deg C
+
+FINAL_TIME_MIN = 120
 TIME_GRID = np.arange(0, FINAL_TIME_MIN + 2, 2)
 PLATEAU_TOL_PSI = 1.0
 
+# Methanol is searched only over the tested range (10-30 wt%).
+METHANOL_MIN, METHANOL_MAX, METHANOL_STEP = 10.0, 30.0, 0.5
+METHANOL_GRID = np.arange(METHANOL_MIN, METHANOL_MAX + METHANOL_STEP / 2, METHANOL_STEP)
+
+# ----------------------------------------------------------------------------
+# Lab-fitted equations (runs with corrosion inhibitor, 10-30 wt% methanol).
+#   y = b0 + b_m*methanol + b_c*corrosion + b_s*scale + b_mc*methanol*corrosion
+# Scale coefficient is negative: more scale inhibitor always lowers plateau pressure
+# (about -1.36 psi per +0.001 wt%). Leave-one-run-out error: ~0.9 psi (pressure).
+# ----------------------------------------------------------------------------
+P_COEF = dict(b0=113.85196293921909, m=0.12807377049180496, c=-87.3633879781421,
+              s=-1364.3699565487275, mc=1.2704918032786594)
+T_COEF = dict(b0=8.335100131269654, m=-0.0273565573770492, c=0.37568306010928154,
+              s=76.35009310986969, mc=0.0051229508196725115)
+
+
+def equation(coef, methanol, corr, scale):
+    return (coef["b0"] + coef["m"] * methanol + coef["c"] * corr
+            + coef["s"] * scale + coef["mc"] * methanol * corr)
+
+
 st.set_page_config(page_title="Thermodynamic Optimization Engine", layout="wide")
-st.title("Thermodynamic Optimization Engine")
-st.markdown("Predictive optimum methanol dosage for steady-state flow assurance in the presence of CI and SI.")
+st.title("⚙️ Thermodynamic Optimization Engine")
+st.markdown("Predictive minimum methanol dosage for steady-state flow assurance.")
 
 
 @st.cache_resource
@@ -34,11 +60,6 @@ except FileNotFoundError:
     st.error(f"Model file not found: `{MODEL_PATH.name}`. "
              "Place it in the same folder as this script and reload.")
     st.stop()
-
-
-def predict(df: pd.DataFrame) -> np.ndarray:
-    """Predict [pressure, temperature]; column order is enforced to match training."""
-    return np.asarray(model.predict(df[FEATURES]))
 
 
 # ----------------------------------------------------------------------------
@@ -75,11 +96,10 @@ def synced_input(label, min_val, max_val, default_val, step_val, key_base, forma
 
 
 st.sidebar.header("Pipeline Boundary Conditions")
+st.sidebar.caption(f"Lab conditions fixed at {LAB_INIT_P:.0f} psi and {LAB_INIT_T:.0f} °C initial.")
 
-target_p = synced_input("Target Plateau Pressure (psi) [Max: 141]", 50.0, 141.0, 114.0, 1.0, "target_p")
-init_p = synced_input("Initial Pressure (psi) [Lab: 150]", 100.0, 160.0, 150.0, 1.0, "init_p")
-init_t = synced_input("Initial Temperature (°C) [Lab: 20-35]", 20.0, 35.0, 30.0, 0.5, "init_t")
-corr = synced_input("Corrosion Inhibitor (wt%) [Lab: 0.00 - 0.10]", 0.00, 0.10, 0.05, 0.01, "corr")
+target_p = synced_input("Target Plateau Pressure (psi)", 90.0, 125.0, 110.0, 0.5, "target_p")
+corr = synced_input("Corrosion Inhibitor (wt%) [Lab: 0.01 - 0.10]", 0.01, 0.10, 0.05, 0.01, "corr")
 scale = synced_input("Scale Inhibitor (wt%) [Lab: 0.0000 - 0.0045]", 0.0000, 0.0045, 0.0025, 0.0005,
                      "scale", format_str="%.4f")
 
@@ -87,62 +107,61 @@ scale = synced_input("Scale Inhibitor (wt%) [Lab: 0.0000 - 0.0045]", 0.0000, 0.0
 # ----------------------------------------------------------------------------
 # Optimization
 # ----------------------------------------------------------------------------
-def build_frame(times, methanol):
-    """Build a model-input frame; scalars are broadcast against array arguments."""
-    n = max(np.size(times), np.size(methanol))
-    return pd.DataFrame({
-        "time_min": np.broadcast_to(times, n),
-        "Methanol_wt": np.broadcast_to(methanol, n),
-        "Corrosion_wt": corr,
-        "Scale_wt": scale,
-        "Initial_Pressure_psi": init_p,
-        "Initial_Temperature_C": init_t,
-    })
+def find_minimum_methanol(target, corr_v, scale_v):
+    """Lowest tested-range methanol dose whose plateau pressure meets the target."""
+    plateau = equation(P_COEF, METHANOL_GRID, corr_v, scale_v)
+    hits = np.flatnonzero(plateau >= target)
+    best = None if hits.size == 0 else float(METHANOL_GRID[hits[0]])
+    return best, float(plateau.min()), float(plateau.max())
 
 
-def find_minimum_methanol():
-    """Single batched prediction over the whole methanol grid (instead of one call per step)."""
-    final_pressure = predict(build_frame(FINAL_TIME_MIN, METHANOL_GRID))[:, 0]
-    hits = np.flatnonzero(final_pressure >= target_p)
-    return None if hits.size == 0 else float(METHANOL_GRID[hits[0]])
+def anchored_curve(raw, start, end_target):
+    """Shift a model curve so it ends at `end_target`, applying the shift gradually
+    in proportion to how much of the curve's own drop has happened."""
+    drop = start - raw[-1]
+    if abs(drop) < 1e-6:
+        w = np.linspace(0.0, 1.0, len(raw))
+    else:
+        w = np.clip((start - raw) / drop, 0.0, 1.0)
+    return raw + w * (end_target - raw[-1])
 
 
-def plateau_metrics(sim_df):
-    """Plateau = first time after which pressure stays within tolerance of the final value."""
+def simulate(methanol, corr_v, scale_v):
+    frame = pd.DataFrame({
+        "time_min": TIME_GRID, "Methanol_wt": methanol, "Corrosion_wt": corr_v,
+        "Scale_wt": scale_v, "Initial_Pressure_psi": LAB_INIT_P,
+        "Initial_Temperature_C": LAB_INIT_T,
+    })[FEATURES]
+    raw = np.asarray(model.predict(frame))
+    final_p = equation(P_COEF, methanol, corr_v, scale_v)
+    final_t = equation(T_COEF, methanol, corr_v, scale_v)
+    pressure = anchored_curve(raw[:, 0], LAB_INIT_P, final_p)
+    temperature = anchored_curve(raw[:, 1], LAB_INIT_T, final_t)
+    return pd.DataFrame({"time_min": TIME_GRID, "pred_P": pressure, "pred_T": temperature})
+
+
+def plateau_time(sim_df):
+    """First time after which pressure stays within tolerance of the final value."""
     within = (np.abs(sim_df["pred_P"] - sim_df["pred_P"].iloc[-1]) <= PLATEAU_TOL_PSI).to_numpy()
     stays_within = np.logical_and.accumulate(within[::-1])[::-1]
-    idx = int(np.argmax(stays_within))
-    return sim_df["time_min"].iloc[idx], sim_df["pred_T"].iloc[idx]
+    return int(sim_df["time_min"].iloc[int(np.argmax(stays_within))])
 
 
 if st.sidebar.button("Run Optimization", type="primary"):
-    best_methanol = find_minimum_methanol()
+    best, p_low, p_high = find_minimum_methanol(target_p, corr, scale)
     result = {
-        "inputs": dict(target_p=target_p, init_p=init_p, init_t=init_t, corr=corr, scale=scale),
-        "best_methanol": best_methanol,
+        "inputs": dict(target_p=target_p, corr=corr, scale=scale),
+        "best_methanol": best,
+        "p_low": p_low,
+        "p_high": p_high,
     }
-    if best_methanol is not None:
-        sim_df = build_frame(TIME_GRID, best_methanol)
-        preds = predict(sim_df)
-        sim_df["pred_P"], sim_df["pred_T"] = preds[:, 0], preds[:, 1]
+    if best is not None:
+        sim_df = simulate(best, corr, scale)
         result["sim_df"] = sim_df
-        result["plateau_time"], result["final_t"] = plateau_metrics(sim_df)
-    # Persist so results survive later widget interactions (Streamlit reruns the script)
+        result["plateau_time"] = plateau_time(sim_df)
+        result["plateau_p"] = float(sim_df["pred_P"].iloc[-1])
+        result["final_t"] = float(sim_df["pred_T"].iloc[-1])   # temperature at 120 min
     st.session_state["result"] = result
-
-# ----------------------------------------------------------------------------
-# Sidebar Footer: Thermodynamic Discovery Limits
-# ----------------------------------------------------------------------------
-st.sidebar.divider()
-st.sidebar.markdown("### Lab Thermodynamic Extremes")
-st.sidebar.info(
-    "**Maximum Achievable Plateau Pressures:**\n"
-    "*(From a 150 psi initial pressure)*\n\n"
-    "**141 psi (Uninhibited)**\n"
-    "Achieved using 30 wt% Methanol with 0% CI and 0% SI.\n\n"
-    "**106 psi (Max Antagonism)**\n"
-    "Achieved using 30 wt% Methanol with maximum inhibitors (0.10 wt% CI, 0.0045 wt% SI)."
-)
 
 # ----------------------------------------------------------------------------
 # Display
@@ -154,30 +173,38 @@ if result:
     inp = result["inputs"]
 
     with col_in:
-        st.subheader("Input Parameters")
+        st.subheader("📥 Input Parameters")
         st.info(
             f"**Target Plateau Pressure:** {inp['target_p']} psi\n\n"
-            f"**Initial Pressure:** {inp['init_p']} psi\n\n"
-            f"**Initial Temperature:** {inp['init_t']} °C\n\n"
             f"**Corrosion Inhibitor:** {inp['corr']} wt%\n\n"
-            f"**Scale Inhibitor:** {inp['scale']:.4f} wt%"
+            f"**Scale Inhibitor:** {inp['scale']:.4f} wt%\n\n"
+            f"**Initial Pressure / Temperature (fixed):** {LAB_INIT_P:.0f} psi / {LAB_INIT_T:.0f} °C"
         )
-        if (inp != dict(target_p=target_p, init_p=init_p, init_t=init_t, corr=corr, scale=scale)):
+        if inp != dict(target_p=target_p, corr=corr, scale=scale):
             st.caption("⚠️ Sidebar values changed since this run — click **Run Optimization** to update.")
 
     with col_out:
-        st.subheader("Optimization Output")
-        if result["best_methanol"] is None:
+        st.subheader("📤 Optimization Output")
+        best = result["best_methanol"]
+        if best is None:
             st.error(
-                f"❌ Target pressure cannot be achieved with up to {METHANOL_GRID[-1]:.0f} wt% "
-                "methanol within the laboratory data range. Try a lower target pressure."
+                f"❌ Target pressure cannot be reached with up to {METHANOL_MAX:.0f} wt% methanol "
+                f"for these inhibitor levels. Predicted plateau pressure for "
+                f"{METHANOL_MIN:.0f}-{METHANOL_MAX:.0f} wt% methanol is "
+                f"{result['p_low']:.1f}-{result['p_high']:.1f} psi. Try a lower target."
             )
         else:
             st.success(
-                f" **Optimal Methanol Dosage:** {result['best_methanol']:.1f} wt%\n\n"
+                f"✅ **Optimal Methanol Dosage:** {best:.1f} wt%\n\n"
+                f"📈 **Plateau Pressure:** {result['plateau_p']:.1f} psi\n\n"
                 f"⏱️ **Time to Plateau:** {result['plateau_time']} minutes\n\n"
-                f"🌡️ **Final Temperature:** {result['final_t']:.1f} °C"
+                f"🌡️ **Temperature at {FINAL_TIME_MIN} min:** {result['final_t']:.1f} °C"
             )
+            if best <= METHANOL_MIN:
+                st.warning(
+                    f"The target is already met at the lowest tested dose ({METHANOL_MIN:.0f} wt%). "
+                    "A lower dose may also work, but it was not tested in the laboratory."
+                )
 
     if result["best_methanol"] is not None:
         sim = result["sim_df"].set_index("time_min")
