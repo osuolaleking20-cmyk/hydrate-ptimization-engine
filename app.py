@@ -207,9 +207,7 @@ if result:
         if best is None:
             st.error(
                 f"❌ Target pressure cannot be reached with up to {METHANOL_MAX:.0f} wt% methanol "
-                f"for these inhibitor levels. Predicted plateau pressure for "
-                f"{METHANOL_MIN:.0f}-{METHANOL_MAX:.0f} wt% methanol is "
-                f"{result['p_low']:.1f}-{result['p_high']:.1f} psi. Try a lower target."
+                f"for these inhibitor levels. Try a lower target."
             )
         else:
             st.success(
