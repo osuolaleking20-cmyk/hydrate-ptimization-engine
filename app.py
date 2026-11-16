@@ -8,7 +8,7 @@ import streamlit as st
 # ----------------------------------------------------------------------------
 # Constants
 # ----------------------------------------------------------------------------
-MODEL_PATH = Path(__file__).parent / "thermodynamic_engine (1).pkl"
+MODEL_PATH = Path(__file__).parent / "thermodynamic_engine.pkl (1)"
 FEATURES = [
     "time_min", "Methanol_wt", "Corrosion_wt",
     "Scale_wt", "Initial_Pressure_psi", "Initial_Temperature_C",
@@ -164,6 +164,24 @@ if st.sidebar.button("Run Optimization", type="primary"):
     st.session_state["result"] = result
 
 # ----------------------------------------------------------------------------
+# Sidebar footer: measured laboratory extremes (final pressure at 120 min)
+# ----------------------------------------------------------------------------
+st.sidebar.divider()
+st.sidebar.markdown("**Laboratory extremes (measured at 120 min)**")
+st.sidebar.markdown(
+    "**Best case:** the highest pressure retained was **141 psi**, with the maximum methanol "
+    "(30 wt%) and **no** corrosion or scale inhibitor.\n\n"
+    "**Worst case:** the lowest pressure with inhibitors was **101 psi**, with the maximum corrosion "
+    "inhibitor (0.10 wt%) and maximum scale inhibitor (0.0045 wt%) at the **lowest** methanol "
+    "tested (10 wt%). At 30 wt% methanol the same inhibitor mix gave 106 psi."
+)
+st.sidebar.caption(
+    "Without any methanol or inhibitor the lab run collapsed to 60 psi (hydrate). "
+    "The 141 psi case needs zero corrosion inhibitor, which is outside this app's range "
+    "(corrosion starts at 0.01 wt%); within the app's range the highest measured pressure was 117 psi."
+)
+
+# ----------------------------------------------------------------------------
 # Display
 # ----------------------------------------------------------------------------
 result = st.session_state.get("result")
@@ -213,3 +231,23 @@ if result:
         c1.line_chart(sim["pred_P"])
         c2.markdown("**Predicted temperature (°C) vs time (min)**")
         c2.line_chart(sim["pred_T"])
+
+# ----------------------------------------------------------------------------
+# Limits of this tool (always shown at the bottom of the page)
+# ----------------------------------------------------------------------------
+st.divider()
+st.subheader("⚠️ Limits of this tool")
+st.markdown(
+    "- **Valid range only:** methanol 10-30 wt%, corrosion inhibitor 0.01-0.10 wt%, "
+    "scale inhibitor 0-0.0045 wt%, starting at 150 psi and 30 °C. Outside this, results are guesses.\n"
+    "- **Plateau pressure accuracy:** typically within about 1 psi (worst case about 2.7 psi) "
+    "when tested on laboratory runs left out of the fit.\n"
+    "- **Methanol dose is approximate:** methanol changes the plateau pressure only slightly "
+    "(about 0.19 psi per wt%), so a 1 psi error means roughly 5 wt% of methanol. "
+    "For safety, aim about 1 psi above your real target.\n"
+    "- **Temperature is a rough value:** at 120 minutes every laboratory run ended between 7 and 9.5 °C, "
+    "so treat the result as about 8 °C.\n"
+    "- **Early part of the curves is less reliable** than the plateau, especially the first 10 minutes.\n"
+    "- **Based on 40 single laboratory runs with no repeats.** Methanol was tested only at 0, 10, 20 and "
+    "30 wt%, and nothing between 0 and 10 wt%, so doses below 10 wt% are not predicted."
+)
