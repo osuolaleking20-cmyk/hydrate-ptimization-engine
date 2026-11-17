@@ -8,7 +8,7 @@ import streamlit as st
 # ----------------------------------------------------------------------------
 # Constants
 # ----------------------------------------------------------------------------
-MODEL_PATH = Path(__file__).parent / "thermodynamic_engine(1).pkl"
+MODEL_PATH = Path(__file__).parent / "thermodynamic_engine.pkl"
 FEATURES = [
     "time_min", "Methanol_wt", "Corrosion_wt",
     "Scale_wt", "Initial_Pressure_psi", "Initial_Temperature_C",
@@ -107,14 +107,6 @@ op_t = synced_input("Operating Temperature (°C) [Lab: 30]", 20.0, 35.0, LAB_INI
 corr = synced_input("Corrosion Inhibitor (wt%) [Lab: 0.01 - 0.10]", 0.01, 0.10, 0.05, 0.01, "corr")
 scale = synced_input("Scale Inhibitor (wt%) [Lab: 0.0000 - 0.0045]", 0.0000, 0.0045, 0.0025, 0.0005,
                      "scale", format_str="%.4f")
-
-if (op_p, op_t) != (LAB_INIT_P, LAB_INIT_T):
-    st.sidebar.warning(
-        f"All laboratory experiments ran at {LAB_INIT_P:.0f} psi and {LAB_INIT_T:.0f} °C. "
-        "Other operating values do not change the predicted plateau pressure, dosage, temperature "
-        "or curves. Operating pressure is used only in the inhibition efficiency, which is "
-        "extrapolated in this case."
-    )
 
 
 # ----------------------------------------------------------------------------
@@ -267,4 +259,3 @@ if result:
         c1.line_chart(sim["pred_P"])
         c2.markdown("**Predicted temperature (°C) vs time (min)**")
         c2.line_chart(sim["pred_T"])
-
