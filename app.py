@@ -8,16 +8,20 @@ import streamlit as st
 # ----------------------------------------------------------------------------
 # Constants
 # ----------------------------------------------------------------------------
-MODEL_PATH = Path(__file__).parent / "thermodynamic_engine (1).pkl"
+MODEL_PATH = Path(__file__).parent / "thermodynamic_engine(1).pkl"
 FEATURES = [
     "time_min", "Methanol_wt", "Corrosion_wt",
     "Scale_wt", "Initial_Pressure_psi", "Initial_Temperature_C",
 ]
 
-# Lab conditions the model was trained on. These never varied in the experiments,
-# so they are fixed here rather than offered as inputs.
+# Laboratory operating condition: every experiment started at 150 psi and 30 deg C,
+# so the engine is calibrated at this condition only.
 LAB_INIT_P = 150.0   # psi
 LAB_INIT_T = 30.0    # deg C
+
+# Reference for inhibition efficiency: the uninhibited laboratory run (no methanol, no
+# corrosion or scale inhibitor) fell from 150 psi to 60 psi after 120 minutes.
+UNINHIBITED_FINAL_P = 60.0   # psi
 
 FINAL_TIME_MIN = 120
 TIME_GRID = np.arange(0, FINAL_TIME_MIN + 2, 2)
@@ -44,9 +48,9 @@ def equation(coef, methanol, corr, scale):
             + coef["s"] * scale + coef["mc"] * methanol * corr)
 
 
-st.set_page_config(page_title="Thermodynamic Optimization Engine", layout="wide")
+st.set_page_config(page_title="THI Optimum Dosage Engine", layout="wide")
 st.title("THI Optimum Dosage Engine")
-st.markdown("Predictive minimum methanol dosage for steady-state flow assurance.")
+st.markdown("Predictive optimum methanol dosage for steady-state flow assurance.")
 
 
 @st.cache_resource
@@ -96,23 +100,43 @@ def synced_input(label, min_val, max_val, default_val, step_val, key_base, forma
 
 
 st.sidebar.header("Pipeline Boundary Conditions")
-st.sidebar.caption(f"Lab conditions fixed at {LAB_INIT_P:.0f} psi and {LAB_INIT_T:.0f} °C initial.")
 
 target_p = synced_input("Target Plateau Pressure (psi)", 90.0, 125.0, 110.0, 0.5, "target_p")
+op_p = synced_input("Operating Pressure (psi) [Lab: 150]", 100.0, 160.0, LAB_INIT_P, 1.0, "op_p")
+op_t = synced_input("Operating Temperature (°C) [Lab: 30]", 20.0, 35.0, LAB_INIT_T, 0.5, "op_t")
 corr = synced_input("Corrosion Inhibitor (wt%) [Lab: 0.01 - 0.10]", 0.01, 0.10, 0.05, 0.01, "corr")
 scale = synced_input("Scale Inhibitor (wt%) [Lab: 0.0000 - 0.0045]", 0.0000, 0.0045, 0.0025, 0.0005,
                      "scale", format_str="%.4f")
+
+if (op_p, op_t) != (LAB_INIT_P, LAB_INIT_T):
+    st.sidebar.warning(
+        f"All laboratory experiments ran at {LAB_INIT_P:.0f} psi and {LAB_INIT_T:.0f} °C. "
+        "Other operating values do not change the predicted plateau pressure, dosage, temperature "
+        "or curves. Operating pressure is used only in the inhibition efficiency, which is "
+        "extrapolated in this case."
+    )
 
 
 # ----------------------------------------------------------------------------
 # Optimization
 # ----------------------------------------------------------------------------
-def find_minimum_methanol(target, corr_v, scale_v):
+def find_optimum_methanol(target, corr_v, scale_v):
     """Lowest tested-range methanol dose whose plateau pressure meets the target."""
     plateau = equation(P_COEF, METHANOL_GRID, corr_v, scale_v)
     hits = np.flatnonzero(plateau >= target)
     best = None if hits.size == 0 else float(METHANOL_GRID[hits[0]])
     return best, float(plateau.min()), float(plateau.max())
+
+
+def inhibition_efficiency(initial_p, final_p, uninhibited_final_p=UNINHIBITED_FINAL_P):
+    """IE (%) = (1 - dP_inhibited / dP_uninhibited) * 100, with dP = initial - final pressure.
+    Returns (IE limited to 0-100 %, True if the 100 % limit was applied)."""
+    dp_inhibited = initial_p - final_p
+    dp_uninhibited = initial_p - uninhibited_final_p
+    if dp_uninhibited <= 0:
+        return None, False
+    ie = (1.0 - dp_inhibited / dp_uninhibited) * 100.0
+    return float(np.clip(ie, 0.0, 100.0)), bool(ie > 100.0)
 
 
 def anchored_curve(raw, start, end_target):
@@ -148,9 +172,9 @@ def plateau_time(sim_df):
 
 
 if st.sidebar.button("Run Optimization", type="primary"):
-    best, p_low, p_high = find_minimum_methanol(target_p, corr, scale)
+    best, p_low, p_high = find_optimum_methanol(target_p, corr, scale)
     result = {
-        "inputs": dict(target_p=target_p, corr=corr, scale=scale),
+        "inputs": dict(target_p=target_p, op_p=op_p, op_t=op_t, corr=corr, scale=scale),
         "best_methanol": best,
         "p_low": p_low,
         "p_high": p_high,
@@ -161,6 +185,7 @@ if st.sidebar.button("Run Optimization", type="primary"):
         result["plateau_time"] = plateau_time(sim_df)
         result["plateau_p"] = float(sim_df["pred_P"].iloc[-1])
         result["final_t"] = float(sim_df["pred_T"].iloc[-1])   # temperature at 120 min
+        result["ie"], result["ie_limited"] = inhibition_efficiency(op_p, result["plateau_p"])
     st.session_state["result"] = result
 
 # ----------------------------------------------------------------------------
@@ -194,11 +219,12 @@ if result:
         st.subheader("📥 Input Parameters")
         st.info(
             f"**Target Plateau Pressure:** {inp['target_p']} psi\n\n"
+            f"**Operating Pressure:** {inp['op_p']:.0f} psi\n\n"
+            f"**Operating Temperature:** {inp['op_t']:.1f} °C\n\n"
             f"**Corrosion Inhibitor:** {inp['corr']} wt%\n\n"
-            f"**Scale Inhibitor:** {inp['scale']:.4f} wt%\n\n"
-            f"**Initial Pressure / Temperature (fixed):** {LAB_INIT_P:.0f} psi / {LAB_INIT_T:.0f} °C"
+            f"**Scale Inhibitor:** {inp['scale']:.4f} wt%"
         )
-        if inp != dict(target_p=target_p, corr=corr, scale=scale):
+        if inp != dict(target_p=target_p, op_p=op_p, op_t=op_t, corr=corr, scale=scale):
             st.caption("⚠️ Sidebar values changed since this run — click **Run Optimization** to update.")
 
     with col_out:
@@ -207,15 +233,27 @@ if result:
         if best is None:
             st.error(
                 f"❌ Target pressure cannot be reached with up to {METHANOL_MAX:.0f} wt% methanol "
-                f"for these inhibitor levels. Try a lower target."
+                f"for these inhibitor levels. Predicted plateau pressure for "
+                f"{METHANOL_MIN:.0f}-{METHANOL_MAX:.0f} wt% methanol is "
+                f"{result['p_low']:.1f}-{result['p_high']:.1f} psi. Try a lower target."
             )
         else:
             st.success(
                 f"✅ **Optimal Methanol Dosage:** {best:.1f} wt%\n\n"
                 f"📈 **Plateau Pressure:** {result['plateau_p']:.1f} psi\n\n"
                 f"⏱️ **Time to Plateau:** {result['plateau_time']} minutes\n\n"
-                f"🌡️ **Temperature at {FINAL_TIME_MIN} min:** {result['final_t']:.1f} °C"
+                f"🌡️ **Temperature at {FINAL_TIME_MIN} min:** {result['final_t']:.1f} °C\n\n"
+                f"🛡️ **Inhibition Efficiency:** {result['ie']:.1f} %"
             )
+            st.caption(
+                "Inhibition Efficiency (IE) % = (1 − ΔP inhibited / ΔP uninhibited) × 100, where ΔP is "
+                "the initial pressure minus the final pressure. The uninhibited reference is the "
+                f"laboratory run with no methanol and no inhibitors ({UNINHIBITED_FINAL_P:.0f} psi after "
+                f"{FINAL_TIME_MIN} minutes)."
+            )
+            if result["ie_limited"]:
+                st.caption("Operating pressure is at or below the plateau pressure, so no pressure loss "
+                           "is predicted and the efficiency is shown as 100 %.")
             if best <= METHANOL_MIN:
                 st.warning(
                     f"The target is already met at the lowest tested dose ({METHANOL_MIN:.0f} wt%). "
@@ -229,4 +267,29 @@ if result:
         c1.line_chart(sim["pred_P"])
         c2.markdown("**Predicted temperature (°C) vs time (min)**")
         c2.line_chart(sim["pred_T"])
-  
+
+# ----------------------------------------------------------------------------
+# Limits of this tool (always shown at the bottom of the page)
+# ----------------------------------------------------------------------------
+st.divider()
+st.subheader("⚠️ Limits of this tool")
+st.markdown(
+    "- **Valid range only:** methanol 10-30 wt%, corrosion inhibitor 0.01-0.10 wt%, "
+    "scale inhibitor 0-0.0045 wt%. Outside this, results are guesses.\n"
+    "- **Operating pressure and temperature:** every laboratory experiment started at 150 psi and 30 °C, "
+    "so only that condition is validated. Other values do not change the predicted plateau pressure, "
+    "dosage, temperature or curves. Operating pressure is used only in the inhibition efficiency, "
+    "which is then extrapolated.\n"
+    "- **Inhibition efficiency** compares the result at the optimum dose with the laboratory run that "
+    "had no methanol and no inhibitors (it fell from 150 psi to 60 psi in 120 minutes).\n"
+    "- **Plateau pressure accuracy:** typically within about 1 psi (worst case about 2.7 psi) "
+    "when tested on laboratory runs left out of the fit.\n"
+    "- **Methanol dose is approximate:** methanol changes the plateau pressure only slightly "
+    "(about 0.19 psi per wt%), so a 1 psi error means roughly 5 wt% of methanol. "
+    "For safety, aim about 1 psi above your real target.\n"
+    "- **Temperature is a rough value:** at 120 minutes every laboratory run ended between 7 and 9.5 °C, "
+    "so treat the result as about 8 °C.\n"
+    "- **Early part of the curves is less reliable** than the plateau, especially the first 10 minutes.\n"
+    "- **Based on 40 single laboratory runs with no repeats.** Methanol was tested only at 0, 10, 20 and "
+    "30 wt%, and nothing between 0 and 10 wt%, so doses below 10 wt% are not predicted."
+)
