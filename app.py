@@ -267,7 +267,4 @@ if result:
         c1.line_chart(sim["pred_P"])
         c2.markdown("**Predicted temperature (°C) vs time (min)**")
         c2.line_chart(sim["pred_T"])
-    "- **Early part of the curves is less reliable** than the plateau, especially the first 10 minutes.\n"
-    "- **Based on 40 single laboratory runs with no repeats.** Methanol was tested only at 0, 10, 20 and "
-    "30 wt%, and nothing between 0 and 10 wt%, so doses below 10 wt% are not predicted."
-)
+
