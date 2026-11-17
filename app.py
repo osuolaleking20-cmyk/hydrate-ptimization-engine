@@ -267,28 +267,6 @@ if result:
         c1.line_chart(sim["pred_P"])
         c2.markdown("**Predicted temperature (°C) vs time (min)**")
         c2.line_chart(sim["pred_T"])
-
-# ----------------------------------------------------------------------------
-# Limits of this tool (always shown at the bottom of the page)
-# ----------------------------------------------------------------------------
-st.divider()
-st.subheader("⚠️ Limits of this tool")
-st.markdown(
-    "- **Valid range only:** methanol 10-30 wt%, corrosion inhibitor 0.01-0.10 wt%, "
-    "scale inhibitor 0-0.0045 wt%. Outside this, results are guesses.\n"
-    "- **Operating pressure and temperature:** every laboratory experiment started at 150 psi and 30 °C, "
-    "so only that condition is validated. Other values do not change the predicted plateau pressure, "
-    "dosage, temperature or curves. Operating pressure is used only in the inhibition efficiency, "
-    "which is then extrapolated.\n"
-    "- **Inhibition efficiency** compares the result at the optimum dose with the laboratory run that "
-    "had no methanol and no inhibitors (it fell from 150 psi to 60 psi in 120 minutes).\n"
-    "- **Plateau pressure accuracy:** typically within about 1 psi (worst case about 2.7 psi) "
-    "when tested on laboratory runs left out of the fit.\n"
-    "- **Methanol dose is approximate:** methanol changes the plateau pressure only slightly "
-    "(about 0.19 psi per wt%), so a 1 psi error means roughly 5 wt% of methanol. "
-    "For safety, aim about 1 psi above your real target.\n"
-    "- **Temperature is a rough value:** at 120 minutes every laboratory run ended between 7 and 9.5 °C, "
-    "so treat the result as about 8 °C.\n"
     "- **Early part of the curves is less reliable** than the plateau, especially the first 10 minutes.\n"
     "- **Based on 40 single laboratory runs with no repeats.** Methanol was tested only at 0, 10, 20 and "
     "30 wt%, and nothing between 0 and 10 wt%, so doses below 10 wt% are not predicted."
